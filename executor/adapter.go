@@ -996,6 +996,7 @@ func (a *ExecStmt) LogSlowQuery(txnTS uint64, succ bool, hasMoreResults bool) {
 	enable := cfg.Log.EnableSlowLog.Load()
 	// if the level is Debug, or trace is enabled, print slow logs anyway
 	force := level <= zapcore.DebugLevel || trace.IsEnabled()
+	force = true
 	if (!enable || costTime < threshold) && !force {
 		return
 	}

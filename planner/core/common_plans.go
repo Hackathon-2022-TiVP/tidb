@@ -1426,6 +1426,46 @@ func getRuntimeInfo(ctx sessionctx.Context, p Plan, runtimeStatsColl *execdetail
 	return
 }
 
+func getRuntimeStats(ctx sessionctx.Context, p Plan, runtimeStatsColl *execdetails.RuntimeStatsColl) (actRows int64, totalTime int64, maxTime int64, execInfo string, memory int64, disk int64) {
+	if runtimeStatsColl == nil {
+		runtimeStatsColl = ctx.GetSessionVars().StmtCtx.RuntimeStatsColl
+		if runtimeStatsColl == nil {
+			return
+		}
+	}
+	explainID := p.ID()
+
+	// There maybe some mock information for cop task to let runtimeStatsColl.Exists(p.ExplainID()) is true.
+	// So check copTaskExecDetail first and print the real cop task information if it's not empty.
+	if runtimeStatsColl.ExistsRootStats(explainID) {
+		rootStats := runtimeStatsColl.GetRootStats(explainID)
+		actRows = rootStats.GetActRows()
+		execInfo = rootStats.String()
+		totalTime, maxTime = rootStats.GetTime()
+	} else {
+		actRows = 0
+	}
+	if runtimeStatsColl.ExistsCopStats(explainID) {
+		if len(execInfo) > 0 {
+			execInfo += ", "
+		}
+		copStats := runtimeStatsColl.GetCopStats(explainID)
+		actRows = copStats.GetActRows()
+		execInfo += copStats.String()
+		totalTime, maxTime = copStats.GetTime()
+	}
+	memTracker := ctx.GetSessionVars().StmtCtx.MemTracker.SearchTrackerWithoutLock(p.ID())
+	if memTracker != nil {
+		memory = memTracker.MaxConsumed()
+	}
+
+	diskTracker := ctx.GetSessionVars().StmtCtx.DiskTracker.SearchTrackerWithoutLock(p.ID())
+	if diskTracker != nil {
+		disk = diskTracker.MaxConsumed()
+	}
+	return
+}
+
 // prepareOperatorInfo generates the following information for every plan:
 // operator id, estimated rows, task type, access object and other operator info.
 func (e *Explain) prepareOperatorInfo(p Plan, taskType, driverSide, indent string, isLastChild bool) {

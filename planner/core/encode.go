@@ -19,7 +19,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"hash"
-	"strconv"
 	"sync"
 
 	"github.com/pingcap/failpoint"
@@ -234,11 +233,13 @@ type PlanNode struct {
 	EstRows       float64     `json:"Plan Rows"`
 	ActRows       int64       `json:"Actual Rows"`
 	Task          string      `json:"Task"`
+	TotalTime     int64       `json:"Total Time"`
+	MaxTime       int64       `json:"Max Time"`
 	AccessObject  string      `json:"Access Object"`
 	OperationInfo string      `json:"Operation Info"`
 	ExecutionInfo string      `json:"Execution Info"`
-	Disk          string      `json:"Disk"`
-	Memory        string      `json:"Memory"`
+	Disk          int64       `json:"Disk"`
+	Memory        int64       `json:"Memory"`
 	Children      []*PlanNode `json:"Plans"`
 }
 
@@ -262,23 +263,29 @@ func EncodePlanToJson(p Plan) string {
 }
 
 func encodePlan(p PhysicalPlan, isRoot bool, store kv.StoreType) *PlanNode {
-	taskTypeInfo := plancodec.EncodeTaskType(isRoot, store)
-	actRows, analyzeInfo, memoryInfo, diskInfo := getRuntimeInfo(p.SCtx(), p, nil)
+	var taskTypeInfo string
+	if isRoot {
+		taskTypeInfo = "root"
+	} else {
+		taskTypeInfo = "cop[" + store.Name() + "]"
+	}
+	actRows, totalTime, maxTime, execInfo, memory, disk := getRuntimeStats(p.SCtx(), p, nil)
 	rowCount := 0.0
 	if statsInfo := p.statsInfo(); statsInfo != nil {
 		rowCount = p.statsInfo().RowCount
 	}
-	actualRows, _ := strconv.ParseInt(actRows, 10, 64)
 	planNode := &PlanNode{
 		NodeID:        p.TP(),
 		EstRows:       rowCount,
-		ActRows:       actualRows,
+		ActRows:       actRows,
 		Task:          taskTypeInfo,
+		TotalTime:     totalTime,
+		MaxTime:       maxTime,
 		AccessObject:  "",
 		OperationInfo: p.ExplainInfo(),
-		ExecutionInfo: analyzeInfo,
-		Disk:          diskInfo,
-		Memory:        memoryInfo,
+		ExecutionInfo: execInfo,
+		Disk:          disk,
+		Memory:        memory,
 	}
 	planNode.Children = make([]*PlanNode, 0)
 	for _, child := range p.Children() {

@@ -17,6 +17,7 @@ package execdetails
 import (
 	"bytes"
 	"fmt"
+	"github.com/cznic/mathutil"
 	"math"
 	"sort"
 	"strconv"
@@ -345,6 +346,16 @@ func (crs *CopRuntimeStats) GetActRows() (totalRows int64) {
 	return totalRows
 }
 
+func (crs *CopRuntimeStats) GetTime() (totalTime, maxTime int64) {
+	for _, instanceStats := range crs.stats {
+		for _, stat := range instanceStats {
+			totalTime += stat.consume
+			maxTime = mathutil.MaxInt64(maxTime, stat.consume)
+		}
+	}
+	return
+}
+
 func (crs *CopRuntimeStats) String() string {
 	if len(crs.stats) == 0 {
 		return ""
@@ -490,6 +501,14 @@ func (e *RootRuntimeStats) GetActRows() int64 {
 		num += basic.GetActRows()
 	}
 	return num
+}
+
+func (e *RootRuntimeStats) GetTime() (totalTime, maxTime int64) {
+	for _, basic := range e.basics {
+		totalTime += basic.consume
+		maxTime = mathutil.MaxInt64(maxTime, basic.consume)
+	}
+	return
 }
 
 // String implements the RuntimeStats interface.
