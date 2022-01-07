@@ -17,7 +17,9 @@ package core
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"hash"
+	"strconv"
 	"sync"
 
 	"github.com/pingcap/failpoint"
@@ -225,4 +227,79 @@ func getSelectPlan(p Plan) PhysicalPlan {
 		}
 	}
 	return selectPlan
+}
+
+type PlanNode struct {
+	NodeID        string      `json:"Node Id"`
+	EstRows       float64     `json:"Plan Rows"`
+	ActRows       int64       `json:"Actual Rows"`
+	Task          string      `json:"Task"`
+	AccessObject  string      `json:"Access Object"`
+	OperationInfo string      `json:"Operation Info"`
+	ExecutionInfo string      `json:"Execution Info"`
+	Disk          string      `json:"Disk"`
+	Memory        string      `json:"Memory"`
+	Children      []*PlanNode `json:"Plans"`
+}
+
+func EncodePlanToJson(p Plan) string {
+	if explain, ok := p.(*Explain); ok {
+		p = explain.TargetPlan
+	}
+	if p == nil || p.SCtx() == nil {
+		return ""
+	}
+	selectPlan := getSelectPlan(p)
+	if selectPlan != nil {
+		rootPlanNode := encodePlan(selectPlan, true, kv.TiKV)
+		bytes, err := json.Marshal(rootPlanNode)
+		if err != nil {
+			return "error"
+		}
+		return string(bytes)
+	}
+	return ""
+}
+
+func encodePlan(p PhysicalPlan, isRoot bool, store kv.StoreType) *PlanNode {
+	taskTypeInfo := plancodec.EncodeTaskType(isRoot, store)
+	actRows, analyzeInfo, memoryInfo, diskInfo := getRuntimeInfo(p.SCtx(), p, nil)
+	rowCount := 0.0
+	if statsInfo := p.statsInfo(); statsInfo != nil {
+		rowCount = p.statsInfo().RowCount
+	}
+	actualRows, _ := strconv.ParseInt(actRows, 10, 64)
+	planNode := &PlanNode{
+		NodeID:        p.TP(),
+		EstRows:       rowCount,
+		ActRows:       actualRows,
+		Task:          taskTypeInfo,
+		AccessObject:  "",
+		OperationInfo: p.ExplainInfo(),
+		ExecutionInfo: analyzeInfo,
+		Disk:          diskInfo,
+		Memory:        memoryInfo,
+	}
+	planNode.Children = make([]*PlanNode, 0)
+	for _, child := range p.Children() {
+		planNode.Children = append(planNode.Children, encodePlan(child, isRoot, store))
+	}
+	switch copPlan := p.(type) {
+	case *PhysicalTableReader:
+		planNode.Children = append(planNode.Children, encodePlan(copPlan.tablePlan, false, copPlan.StoreType))
+	case *PhysicalIndexReader:
+		planNode.Children = append(planNode.Children, encodePlan(copPlan.indexPlan, false, store))
+	case *PhysicalIndexLookUpReader:
+		planNode.Children = append(planNode.Children, encodePlan(copPlan.indexPlan, false, store))
+		planNode.Children = append(planNode.Children, encodePlan(copPlan.tablePlan, false, store))
+	case *PhysicalIndexMergeReader:
+		for _, p := range copPlan.partialPlans {
+			planNode.Children = append(planNode.Children, encodePlan(p, false, store))
+		}
+		if copPlan.tablePlan != nil {
+			planNode.Children = append(planNode.Children, encodePlan(copPlan.tablePlan, false, store))
+		}
+		// TODO CTE
+	}
+	return planNode
 }

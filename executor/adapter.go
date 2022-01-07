@@ -986,6 +986,9 @@ func (a *ExecStmt) CloseRecordSet(txnStartTS uint64, lastErr error) {
 // LogSlowQuery is used to print the slow query in the log files.
 func (a *ExecStmt) LogSlowQuery(txnTS uint64, succ bool, hasMoreResults bool) {
 	sessVars := a.Ctx.GetSessionVars()
+	if sessVars.InRestrictedSQL {
+		return
+	}
 	level := log.GetLevel()
 	cfg := config.GetGlobalConfig()
 	costTime := time.Since(sessVars.StartTime) + sessVars.DurationParse
@@ -993,6 +996,7 @@ func (a *ExecStmt) LogSlowQuery(txnTS uint64, succ bool, hasMoreResults bool) {
 	enable := cfg.Log.EnableSlowLog.Load()
 	// if the level is Debug, or trace is enabled, print slow logs anyway
 	force := level <= zapcore.DebugLevel || trace.IsEnabled()
+	force = true
 	if (!enable || costTime < threshold) && !force {
 		return
 	}
@@ -1036,22 +1040,23 @@ func (a *ExecStmt) LogSlowQuery(txnTS uint64, succ bool, hasMoreResults bool) {
 	diskMax := sessVars.StmtCtx.DiskTracker.MaxConsumed()
 	_, planDigest := getPlanDigest(a.Ctx, a.Plan)
 	slowItems := &variable.SlowQueryLogItems{
-		TxnTS:             txnTS,
-		SQL:               sql.String(),
-		Digest:            digest.String(),
-		TimeTotal:         costTime,
-		TimeParse:         sessVars.DurationParse,
-		TimeCompile:       sessVars.DurationCompile,
-		TimeOptimize:      sessVars.DurationOptimization,
-		TimeWaitTS:        sessVars.DurationWaitTS,
-		IndexNames:        indexNames,
-		StatsInfos:        statsInfos,
-		CopTasks:          copTaskInfo,
-		ExecDetail:        execDetail,
-		MemMax:            memMax,
-		DiskMax:           diskMax,
-		Succ:              succ,
-		Plan:              getPlanTree(a.Ctx, a.Plan),
+		TxnTS:        txnTS,
+		SQL:          sql.String(),
+		Digest:       digest.String(),
+		TimeTotal:    costTime,
+		TimeParse:    sessVars.DurationParse,
+		TimeCompile:  sessVars.DurationCompile,
+		TimeOptimize: sessVars.DurationOptimization,
+		TimeWaitTS:   sessVars.DurationWaitTS,
+		IndexNames:   indexNames,
+		StatsInfos:   statsInfos,
+		CopTasks:     copTaskInfo,
+		ExecDetail:   execDetail,
+		MemMax:       memMax,
+		DiskMax:      diskMax,
+		Succ:         succ,
+		//Plan:              getPlanTree(a.Ctx, a.Plan),
+		Plan:              getJsonPlanTree(a.Plan),
 		PlanDigest:        planDigest.String(),
 		Prepared:          a.isPreparedStmt,
 		HasMoreResults:    hasMoreResults,
@@ -1139,6 +1144,14 @@ func getPlanTree(sctx sessionctx.Context, p plannercore.Plan) string {
 		return planTree
 	}
 	return variable.SlowLogPlanPrefix + planTree + variable.SlowLogPlanSuffix
+}
+
+func getJsonPlanTree(p plannercore.Plan) string {
+	cfg := config.GetGlobalConfig()
+	if atomic.LoadUint32(&cfg.Log.RecordPlanInSlowLog) == 0 {
+		return ""
+	}
+	return plannercore.EncodePlanToJson(p)
 }
 
 // getPlanDigest will try to get the select plan tree if the plan is select or the select plan of delete/update/insert statement.
