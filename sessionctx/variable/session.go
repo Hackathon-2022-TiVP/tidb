@@ -2037,6 +2037,8 @@ const (
 	SlowLogPrevStmt = "Prev_stmt"
 	// SlowLogPlan is used to record the query plan.
 	SlowLogPlan = "Plan"
+	// SlowLogPlanJson is used to record the query plan as Json format.
+	SlowLogPlanJson = "PlanJson"
 	// SlowLogPlanDigest is used to record the query plan digest.
 	SlowLogPlanDigest = "Plan_digest"
 	// SlowLogPlanPrefix is the prefix of the plan value.
@@ -2091,6 +2093,7 @@ type SlowQueryLogItems struct {
 	HasMoreResults    bool
 	PrevStmt          string
 	Plan              string
+	PlanJson          string
 	PlanDigest        string
 	RewriteInfo       RewritePhaseInfo
 	KVTotal           time.Duration
@@ -2272,6 +2275,9 @@ func (s *SessionVars) SlowLogFormat(logItems *SlowQueryLogItems) string {
 	}
 	if len(logItems.Plan) != 0 {
 		writeSlowLogItem(&buf, SlowLogPlan, logItems.Plan)
+	}
+	if len(logItems.PlanJson) != 0 {
+		writeSlowLogItem(&buf, SlowLogPlanJson, logItems.PlanJson)
 	}
 	if len(logItems.PlanDigest) != 0 {
 		writeSlowLogItem(&buf, SlowLogPlanDigest, logItems.PlanDigest)

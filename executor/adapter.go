@@ -1040,23 +1040,23 @@ func (a *ExecStmt) LogSlowQuery(txnTS uint64, succ bool, hasMoreResults bool) {
 	diskMax := sessVars.StmtCtx.DiskTracker.MaxConsumed()
 	_, planDigest := getPlanDigest(a.Ctx, a.Plan)
 	slowItems := &variable.SlowQueryLogItems{
-		TxnTS:        txnTS,
-		SQL:          sql.String(),
-		Digest:       digest.String(),
-		TimeTotal:    costTime,
-		TimeParse:    sessVars.DurationParse,
-		TimeCompile:  sessVars.DurationCompile,
-		TimeOptimize: sessVars.DurationOptimization,
-		TimeWaitTS:   sessVars.DurationWaitTS,
-		IndexNames:   indexNames,
-		StatsInfos:   statsInfos,
-		CopTasks:     copTaskInfo,
-		ExecDetail:   execDetail,
-		MemMax:       memMax,
-		DiskMax:      diskMax,
-		Succ:         succ,
-		//Plan:              getPlanTree(a.Ctx, a.Plan),
-		Plan:              getJsonPlanTree(a.Plan),
+		TxnTS:             txnTS,
+		SQL:               sql.String(),
+		Digest:            digest.String(),
+		TimeTotal:         costTime,
+		TimeParse:         sessVars.DurationParse,
+		TimeCompile:       sessVars.DurationCompile,
+		TimeOptimize:      sessVars.DurationOptimization,
+		TimeWaitTS:        sessVars.DurationWaitTS,
+		IndexNames:        indexNames,
+		StatsInfos:        statsInfos,
+		CopTasks:          copTaskInfo,
+		ExecDetail:        execDetail,
+		MemMax:            memMax,
+		DiskMax:           diskMax,
+		Succ:              succ,
+		Plan:              getPlanTree(a.Ctx, a.Plan),
+		PlanJson:          getJsonPlanTree(a.Plan),
 		PlanDigest:        planDigest.String(),
 		Prepared:          a.isPreparedStmt,
 		HasMoreResults:    hasMoreResults,
@@ -1151,7 +1151,8 @@ func getJsonPlanTree(p plannercore.Plan) string {
 	if atomic.LoadUint32(&cfg.Log.RecordPlanInSlowLog) == 0 {
 		return ""
 	}
-	return plannercore.EncodePlanToJson(p)
+	planJson := plannercore.EncodePlanToJson(p)
+	return planJson
 }
 
 // getPlanDigest will try to get the select plan tree if the plan is select or the select plan of delete/update/insert statement.
